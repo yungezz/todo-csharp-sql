@@ -24,6 +24,7 @@ param sqlServerName string = ''
 param sqlDatabaseName string = ''
 param webServiceName string = ''
 param apimServiceName string = ''
+param appUser string = 'appUser'
 
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
@@ -75,21 +76,21 @@ module api './app/api.bicep' = {
     appServicePlanId: appServicePlan.outputs.id
     keyVaultName: keyVault.outputs.name
     allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
-    appSettings: {
-      AZURE_SQL_CONNECTION_STRING_KEY: sqlServer.outputs.connectionStringKey
-    }
+//    appSettings: {
+//      AZURE_SQL_CONNECTION_STRING_KEY: sqlServer.outputs.connectionStringKey
+//    }
   }
 }
 
 // Give the API access to KeyVault
-module apiKeyVaultAccess './core/security/keyvault-access.bicep' = {
-  name: 'api-keyvault-access'
-  scope: rg
-  params: {
-    keyVaultName: keyVault.outputs.name
-    principalId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
-  }
-}
+//module apiKeyVaultAccess './core/security/keyvault-access.bicep' = {
+//  name: 'api-keyvault-access'
+//  scope: rg
+//  params: {
+//    keyVaultName: keyVault.outputs.name
+//    principalId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
+//  }
+//}
 
 // The application database
 module sqlServer './app/db.bicep' = {
@@ -104,6 +105,54 @@ module sqlServer './app/db.bicep' = {
     appUserPassword: appUserPassword
     keyVaultName: keyVault.outputs.name
   }
+}
+
+// create connection between api and keyvault
+resource connectionToKeyvault 'Microsoft.ServiceLinker/linkers@2022-11-01-preview' = {
+  name: '${abbrs.servicelinkerKeyvaultLinker}'
+  scope: api.outputs.SERVICE_API_NAME
+  properties: {
+    targetService: {
+      id: keyVault.id
+      type: 'AzureResource'
+    }
+    authInfo: {
+      authType: 'systemAssignedIdentity'
+      roles: [
+        'KeyvaultSecretsUser'
+      ]
+    }
+    clientType: 'dotnet'
+  }
+}
+
+// create connection between api and sql database
+// save sql connection string into above keyvault secret
+// use app service keyvault reference to refer to the keyvault secret
+resource connectionToSQL 'Microsoft.ServiceLinker/linkers@2022-11-01-preview' = {
+  name: '${abbrs.servicelinkerSqlLinker}'
+  scope: api.outputs.SERVICE_API_NAME
+  properties: {
+    targetService: {
+      id: '${sqlServer.id}/databases/${sqlDatabaseName}'
+      type: 'AzureResource'
+    }
+    secretStore: {
+      keyVaultId: keyVault.id
+    }
+    authInfo: {
+      authType: 'secret'
+      name: appUser
+      secretInfo: {
+        secretType: 'rawValue'
+        value: appUserPassword
+      }
+    }
+    clientType: 'dotnet'
+  }
+  dependsOn: [
+    connectionToKeyvault
+  ]
 }
 
 // Create an App Service Plan to group applications under the same payment plan and SKU
