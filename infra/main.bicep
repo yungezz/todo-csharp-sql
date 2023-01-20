@@ -76,6 +76,9 @@ module api './app/api.bicep' = {
     appServicePlanId: appServicePlan.outputs.id
     keyVaultName: keyVault.outputs.name
     allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
+    targetResourceId: '${sqlServer.outputs.id}/databases/${sqlServer.outputs.databaseName}'
+    dbUserName: appUser
+    appUserPassword: appUserPassword
 //    appSettings: {
 //      AZURE_SQL_CONNECTION_STRING_KEY: sqlServer.outputs.connectionStringKey
 //    }
@@ -107,54 +110,6 @@ module sqlServer './app/db.bicep' = {
   }
 }
 
-// create connection between api and keyvault
-resource connectionToKeyvault 'Microsoft.ServiceLinker/linkers@2022-11-01-preview' = {
-  name: '${abbrs.servicelinkerKeyvaultLinker}'
-  scope: api.outputs.SERVICE_API_NAME
-  properties: {
-    targetService: {
-      id: keyVault.id
-      type: 'AzureResource'
-    }
-    authInfo: {
-      authType: 'systemAssignedIdentity'
-      roles: [
-        'KeyvaultSecretsUser'
-      ]
-    }
-    clientType: 'dotnet'
-  }
-}
-
-// create connection between api and sql database
-// save sql connection string into above keyvault secret
-// use app service keyvault reference to refer to the keyvault secret
-resource connectionToSQL 'Microsoft.ServiceLinker/linkers@2022-11-01-preview' = {
-  name: '${abbrs.servicelinkerSqlLinker}'
-  scope: api.outputs.SERVICE_API_NAME
-  properties: {
-    targetService: {
-      id: '${sqlServer.id}/databases/${sqlDatabaseName}'
-      type: 'AzureResource'
-    }
-    secretStore: {
-      keyVaultId: keyVault.id
-    }
-    authInfo: {
-      authType: 'secret'
-      name: appUser
-      secretInfo: {
-        secretType: 'rawValue'
-        value: appUserPassword
-      }
-    }
-    clientType: 'dotnet'
-  }
-  dependsOn: [
-    connectionToKeyvault
-  ]
-}
-
 // Create an App Service Plan to group applications under the same payment plan and SKU
 module appServicePlan './core/host/appserviceplan.bicep' = {
   name: 'appserviceplan'
@@ -180,6 +135,27 @@ module keyVault './core/security/keyvault.bicep' = {
     principalId: principalId
   }
 }
+
+// creation connections
+// 1. if !empty(keyVaultName), create connection to keyvault so that db credentials could be saved into keyvault, 
+// and app service could retrieve secrets from keyvault
+// 2. create connection to target database
+//module connections './app/connection.bicep' = {
+  // name: 'conn${resourceToken}'
+  // scope: api.outputs.api
+  // //scope: api.outputs.SERVICE_API_NAME
+  // params: {
+  //   name: 'conn${resourceToken}'
+  //   authType: 'secret'
+  //   //appResourceId: api.outputs.api.id
+  //   targetResourceId: '${sqlServer.outputs.id}/databases/${sqlDatabaseName}'
+  //   runtimeName: 'dotnet'
+  //   dbUserName: appUser
+  //   dbUserPassword: appUserPassword
+  //   keyVaultName: keyVault.outputs.name
+  //   webAppName: api.outputs.SERVICE_API_NAME
+  // }
+//}
 
 // Monitor application with Azure Monitor
 module monitoring './core/monitor/monitoring.bicep' = {

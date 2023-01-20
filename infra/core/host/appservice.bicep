@@ -33,6 +33,12 @@ param numberOfWorkers int = -1
 param scmDoBuildDuringDeployment bool = false
 param use32BitWorkerProcess bool = false
 
+// Target DB properties
+param targetResourceId string = ''
+param dbUserName string = ''
+@secure()
+param appUserPassword string
+
 resource appService 'Microsoft.Web/sites@2022-03-01' = {
   name: name
   location: location
@@ -57,7 +63,7 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
     httpsOnly: true
   }
 
-  //identity: { type: managedIdentity ? 'SystemAssigned' : 'None' }
+  identity: { type: managedIdentity ? 'SystemAssigned' : 'None' }
 
   resource configAppSettings 'config' = {
     name: 'appsettings'
@@ -84,15 +90,74 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
   }
 }
 
-//resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (!(empty(keyVaultName))) {
-//  name: keyVaultName
-//}
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (!(empty(keyVaultName))) {
+  name: keyVaultName
+}
 
 
 resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!empty(applicationInsightsName)) {
   name: applicationInsightsName
 }
 
+// resource appUserPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+//   parent: keyVault
+//   name: 'appServiceUserPassword'
+//   properties: {
+//     value: appUserPassword
+//   }
+// }
+
+//resource appUserdSecret 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+//  parent: keyVault
+//  name: 'appServiceUser'
+//  properties: {
+//    value: dbUserName
+//  }
+//}
+
+resource connectionToKeyVault 'Microsoft.ServiceLinker/linkers@2022-05-01' =  if(!empty(keyVaultName)) {
+  name: 'conn_kv'
+  scope: appService
+  properties: {
+    targetService: {
+      id: keyVault.id
+      type: 'AzureResource'
+    }
+    clientType: 'none'
+    authInfo: {
+      authType: 'systemAssignedIdentity'
+    }
+  }
+}
+
+
+resource connectionToTargetDB 'Microsoft.ServiceLinker/linkers@2022-05-01' = if (!empty(targetResourceId)) {
+  name: 'conn_db'
+  scope: appService
+  properties: {
+    targetService: {
+      id: targetResourceId
+      type: 'AzureResource'
+    }
+    secretStore: {
+      keyVaultId: !empty(keyVaultName) ? keyVault.id : ''
+    }
+    authInfo: {
+      authType: 'secret'
+      name: dbUserName
+      secretInfo: {
+        secretType: 'rawValue'
+        value: appUserPassword
+      }
+    }
+    clientType: 'dotnet'
+  }
+  dependsOn: [
+    connectionToKeyVault
+  ]
+}
+
 output identityPrincipalId string = managedIdentity ? appService.identity.principalId : ''
 output name string = appService.name
 output uri string = 'https://${appService.properties.defaultHostName}'
+//output appService resource = appService
