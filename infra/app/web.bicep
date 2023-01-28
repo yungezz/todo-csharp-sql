@@ -19,7 +19,7 @@ module web '../core/host/appservice.bicep' = {
     runtimeName: 'node'
     runtimeVersion: '16-lts'
     tags: union(tags, { 'azd-service-name': serviceName })
-    appUserPassword: ''
+    //appUserPassword: ''
   }
 }
 

@@ -37,7 +37,7 @@ param use32BitWorkerProcess bool = false
 param targetResourceId string = ''
 param dbUserName string = ''
 @secure()
-param appUserPassword string
+param appUserPassword string = ''
 
 resource appService 'Microsoft.Web/sites@2022-03-01' = {
   name: name
