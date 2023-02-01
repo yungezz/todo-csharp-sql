@@ -34,6 +34,7 @@ param scmDoBuildDuringDeployment bool = false
 param use32BitWorkerProcess bool = false
 
 // Target DB properties
+param connectionStringKey string = 'AZURE-SQL-CONNECTION-STRING'
 param targetResourceId string = ''
 param dbUserName string = ''
 @secure()
@@ -115,7 +116,7 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing
 //  }
 //}
 
-resource connectionToKeyVault 'Microsoft.ServiceLinker/linkers@2022-05-01' =  if(!empty(keyVaultName)) {
+resource connectionToKeyVault 'Microsoft.ServiceLinker/linkers@2022-11-01-preview' =  if(!empty(keyVaultName)) {
   name: 'conn_kv'
   scope: appService
   properties: {
@@ -126,12 +127,20 @@ resource connectionToKeyVault 'Microsoft.ServiceLinker/linkers@2022-05-01' =  if
     clientType: 'none'
     authInfo: {
       authType: 'systemAssignedIdentity'
+      roles: [
+        '4633458b-17de-408a-b874-0445c86b69e6'
+      ]
+    }
+    configurationInfo: {
+      customizedKeys: {
+        'AZURE_KEYVAULT_RESOURCEENDPOINT': 'AZURE_KEY_VAULT_ENDPOINT'
+      }
     }
   }
 }
 
 
-resource connectionToTargetDB 'Microsoft.ServiceLinker/linkers@2022-05-01' = if (!empty(targetResourceId)) {
+resource connectionToTargetDB 'Microsoft.ServiceLinker/linkers@2022-11-01-preview' = if (!empty(targetResourceId)) {
   name: 'conn_db'
   scope: appService
   properties: {
@@ -141,6 +150,7 @@ resource connectionToTargetDB 'Microsoft.ServiceLinker/linkers@2022-05-01' = if 
     }
     secretStore: {
       keyVaultId: !empty(keyVaultName) ? keyVault.id : ''
+      keyVaultSecretName: !empty(keyVaultName) ? connectionStringKey : ''
     }
     authInfo: {
       authType: 'secret'
